@@ -67,28 +67,38 @@ module.exports = function makeRouterWithSockets (io, client) {
     */
 
 
-  // create a new tweet
-  router.post('/tweets', function(req, res, next){
-    client.query('SELECT users.id \
-    FROM users \
-    WHERE users.name = $1', [req.body.name], 
-    function (err, result) {
-      if (err) return next(err); // pass errors to Express
-      if(result.rows.length == 0){
-        client.query('INSERT INTO users (name, pictureurl) VALUES ($1, $2)', [req.body.name, 'https://pbs.twimg.com/profile_images/2450268678/olxp11gnt09no2y2wpsh_normal.jpeg'], function (err, data) {
-          if(err) return next(err);
+ // create a new tweet
+ router.post('/tweets', function(req, res, next){
+  var pictureurl;
+  client.query('SELECT users.id , pictureurl FROM users WHERE users.name = $1', [req.body.name], function (err, result) {
+    if (err) return next(err); // pass errors to Express
+    if(result.rows.length == 0){
+       client.query('INSERT INTO users (name, pictureurl) VALUES ($1, $2)', [req.body.name, 
+        'https://pbs.twimg.com/profile_images/2450268678/olxp11gnt09no2y2wpsh_normal.jpeg'], function (err, data) {
+          if (err) return next(err);
+          client.query("SELECT pictureurl from users where users.name = $1 ", [req.body.name], function (err, userData) {
+            if (err) return next(err);
+            pictureurl = userData.rows[0].pictureurl;
+            doRest();
+          });
         });
-      }
-      client.query('INSERT INTO tweets (userId, content) VALUES ((SELECT id from Users where name = $1), $2) returning id', [req.body.name, req.body.content], function (err, data) {
-        if(err) return next(err);
-        var tweetid = data.rows[0].id;
-        client.query("SELECT pictureurl from users where users.name = $1 ", [req.body.name], function(err, data){
-          io.sockets.emit('new_tweet', {name: req.body.name, content: req.body.content, pictureurl: data.rows[0].pictureurl, id: tweetid});
-          res.redirect('/'); 
-        });
-      });
-    });
+    } else {
+      pictureurl = result.rows[0].pictureurl;
+      doRest();
+    }
   });
+  // Wrapped in a function because it's invoked in two places.  We may have created the user.  We have the 
+  // picture URL in var pictureurl.
+  function doRest() {
+  client.query('INSERT INTO tweets (userId, content) VALUES ((SELECT id from Users where name = $1), $2) returning id', 
+    [req.body.name, req.body.content], function (err, data) {
+      if(err) return next(err);
+      var tweetid = data.rows[0].id;
+      io.sockets.emit('new_tweet', {name: req.body.name, content: req.body.content, pictureurl: pictureurl, id: tweetid});
+      res.redirect('/');
+    });
+  }
+});
 
   //INSERT INTO Tweets (userId, content) VALUES ((SELECT id from Users where name='Donald Trump'), 'Make Fullstack great again!');
 
